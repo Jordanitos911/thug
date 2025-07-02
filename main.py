@@ -954,11 +954,11 @@ async def on_dropdown(interaction: discord.Interaction):
     if interaction.data["custom_id"] == "ticket_dropdown":
         selected_option = interaction.data["values"][0]
 
-        category_id_option_1 = 1389688893946990745
-        category_id_option_2 = 1389688893946990745
-        category_id_option_3 = 1389688893946990745
-        category_id_option_4 = 1389688893946990745 
-        category_id_option_5 = 1389688893946990745  # TODO: Set the actual category ID for Staff Applications
+        category_id_option_1 = 1388055346907451463
+        category_id_option_2 = 1388055346907451463
+        category_id_option_3 = 1388055346907451463
+        category_id_option_4 = 1388055346907451463
+        category_id_option_5 = 1388055346907451463 # TODO: Set the actual category ID for Staff Applications
 
         if selected_option == "option_1":
             category_id = category_id_option_1
@@ -979,7 +979,7 @@ async def on_dropdown(interaction: discord.Interaction):
             await interaction.response.send_message("Invalid category configuration.", ephemeral=True)
             return
 
-        staff_role_id = 1389691474488070184
+        staff_role_id = 1389773702928797707
         staff_role = interaction.guild.get_role(staff_role_id)
         # Do not block ticket creation if staff_role is missing
 
@@ -1099,7 +1099,7 @@ class ClaimButton(discord.ui.Button):
                 self.staff_role: discord.PermissionOverwrite(send_messages=False, view_channel=True),
                 interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
                 # Add the specific role with view permission
-                interaction.guild.get_role(1389691474488070184): discord.PermissionOverwrite(send_messages=True, view_channel=True)
+                interaction.guild.get_role(1389773702928797707): discord.PermissionOverwrite(send_messages=True, view_channel=True)
             }
 
             # Increment claim count for the user
@@ -1288,7 +1288,7 @@ class TranscriptButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         try:
             # Check if the user has the specific role
-            role_id = 1389691474488070184  # Replace with the specific role ID
+            role_id = 1389773702928797707  # Replace with the specific role ID
             user = interaction.user
             member = interaction.guild.get_member(user.id)
             if role_id not in [role.id for role in member.roles]:
@@ -1303,7 +1303,7 @@ class TranscriptButton(discord.ui.Button):
             ticket_channel = interaction.channel
 
             # Get the specific channel ID where you want to save the transcript
-            transcript_channel_id = 1389691792621834420  # Replace with the specific channel ID
+            transcript_channel_id = 1388076828354281513  # Replace with the specific channel ID
             transcript_channel = interaction.guild.get_channel(transcript_channel_id)
 
             # Ensure the transcript channel exists and is a text channel
@@ -1368,11 +1368,11 @@ class TranscriptButton(discord.ui.Button):
 async def close(ctx):
     # Define a dictionary mapping category IDs to category names
     ticket_categories = {
-        1389688893946990745: "General Support",
-        1389688893946990745: "Ban Appeal",
-        1389688893946990745: "Donation Ticket",
-        1389688893946990745: "Staff Report",
-        1389688893946990745: "Staff Application"
+        1389773702928797707: "General Support",
+        1389773702928797707: "Ban Appeal",
+        1389773702928797707: "Donation Ticket",
+        1389773702928797707: "Staff Report",
+        1389773702928797707: "Staff Application"
 
         # Add more categories as needed
     }
@@ -1385,7 +1385,7 @@ async def close(ctx):
         return
 
     # Check if the user invoking the command has the necessary permissions
-    staff_role_id = 1389691474488070184  # Replace with your staff role ID
+    staff_role_id = 1389773702928797707  # Replace with your staff role ID
     staff_role = ctx.guild.get_role(staff_role_id)
     if staff_role is None or staff_role not in ctx.author.roles:
         await ctx.send("You don't have permission to use this command.")
@@ -1411,7 +1411,7 @@ async def close(ctx):
 @client.command()
 async def transcript(ctx):
     # Check if the user invoking the command has the necessary permissions
-    staff_role_id = 1389691474488070184  # Replace with your staff role ID
+    staff_role_id = 1389773702928797707  # Replace with your staff role ID
     staff_role = ctx.guild.get_role(staff_role_id)
     if staff_role is None or staff_role not in ctx.author.roles:
         await ctx.send("You don't have permission to use this command.")
@@ -1425,7 +1425,7 @@ async def transcript(ctx):
         ticket_channel = ctx.channel
 
         # Get the specific channel ID where you want to save the transcript
-        transcript_channel_id = 1389691474488070184  # Replace with the specific channel ID
+        transcript_channel_id = 1388076828354281513  # Replace with the specific channel ID
         transcript_channel = ctx.guild.get_channel(transcript_channel_id)
 
         # Ensure the transcript channel exists and is a text channel
@@ -1489,7 +1489,7 @@ async def transcript(ctx):
 @client.command()
 async def add(ctx, target):
     # Check if the user invoking the command has the staff role
-    staff_role_id = 1389691474488070184  # Replace with your staff role ID
+    staff_role_id = 1389773702928797707  # Replace with your staff role ID
     staff_role = ctx.guild.get_role(staff_role_id)
     if staff_role is None or staff_role not in ctx.author.roles:
         embed = discord.Embed(
@@ -1551,7 +1551,7 @@ async def add(ctx, target):
 @client.command()
 async def remove(ctx, target):
     # Check if the user invoking the command has the staff role
-    staff_role_id = 1389691474488070184  # Replace with your staff role ID
+    staff_role_id = 1389773702928797707  # Replace with your staff role ID
     staff_role = ctx.guild.get_role(staff_role_id)
     if staff_role is None or staff_role not in ctx.author.roles:
         embed = discord.Embed(
@@ -1614,7 +1614,7 @@ async def remove(ctx, target):
 @client.command()
 async def rename(ctx, *, new_name):
     # Check if the user invoking the command has the staff role
-    staff_role_id = 1389691474488070184  # Replace with your staff role ID
+    staff_role_id = 1389773702928797707  # Replace with your staff role ID
     staff_role = ctx.guild.get_role(staff_role_id)
     if staff_role is None or staff_role not in ctx.author.roles:
         embed = discord.Embed(description="You don't have permission to use this command.", color=0x2a2d30)  # Set color to 0x2a2d30
