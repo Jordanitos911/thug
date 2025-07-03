@@ -18,6 +18,69 @@ import time
 client = commands.Bot(command_prefix=".", intents=discord.Intents.all())
 client.remove_command("help")
 
+import re
+import unicodedata
+
+# List of TOS-violating words/phrases (add more as needed)
+TOS_WORDS = [
+    'nigger', 'nger', 'faggot', 'rape', 'fag',
+]
+
+# --- Global buffer for TOS multi-message detection ---
+global_user_message_buffers = {}
+MAX_TOS_BUFFER = max(len(word) for word in TOS_WORDS)
+
+# Map for common letter-like emojis and regional indicators to letters
+EMOJI_LETTER_MAP = {
+    # Regional indicator symbols
+    '🇦': 'a', '🇧': 'b', '🇨': 'c', '🇩': 'd', '🇪': 'e', '🇫': 'f', '🇬': 'g', '🇭': 'h', '🇮': 'i', '🇯': 'j',
+    '🇰': 'k', '🇱': 'l', '🇲': 'm', '🇳': 'n', '🇴': 'o', '🇵': 'p', '🇶': 'q', '🇷': 'r', '🇸': 's', '🇹': 't',
+    '🇺': 'u', '🇻': 'v', '🇼': 'w', '🇽': 'x', '🇾': 'y', '🇿': 'z',
+    # Keycap emojis
+    '🅰️': 'a', '🅱️': 'b', '🆎': 'ab', '🆑': 'cl', '🆒': 'cool', '🆓': 'free', '🆔': 'id', '🆕': 'new', '🆖': 'ng', '🆗': 'ok', '🆘': 'sos', '🆙': 'up', '🆚': 'vs',
+    # Enclosed alphanumerics
+    'ⓐ': 'a', 'ⓑ': 'b', 'ⓒ': 'c', 'ⓓ': 'd', 'ⓔ': 'e', 'ⓕ': 'f', 'ⓖ': 'g', 'ⓗ': 'h', 'ⓘ': 'i', 'ⓙ': 'j',
+    'ⓚ': 'k', 'ⓛ': 'l', 'ⓜ': 'm', 'ⓝ': 'n', 'ⓞ': 'o', 'ⓟ': 'p', 'ⓠ': 'q', 'ⓡ': 'r', 'ⓢ': 's', 'ⓣ': 't',
+    'ⓤ': 'u', 'ⓥ': 'v', 'ⓦ': 'w', 'ⓧ': 'x', 'ⓨ': 'y', 'ⓩ': 'z',
+    # Add more as needed
+}
+
+def demojify_and_normalize(text):
+    # Replace mapped emojis with their letter equivalents
+    for emoji, letter in EMOJI_LETTER_MAP.items():
+        text = text.replace(emoji, letter)
+    # Remove all other emojis and non-spacing marks
+    text = ''.join(c for c in text if c.isascii() or unicodedata.category(c)[0] != 'So')
+    # Now apply the existing normalization
+    return normalize(text)
+
+def normalize(text):
+    # Remove non-letters
+    text = re.sub(r'[^a-zA-Z]', '', text)
+    # Collapse all repeated letters to a single letter (e.g. niiiiggggger -> niger)
+    text = re.sub(r'(.)\1+', r'\1', text)
+    return text.lower()
+
+def is_subsequence(word, text):
+    """Return True if all letters of word appear in order in text (subsequence match)."""
+    it = iter(text)
+    return all(char in it for char in word)
+
+def levenshtein(s1, s2):
+    if len(s1) < len(s2):
+        return levenshtein(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
 
 whitelist = []
 
@@ -523,7 +586,7 @@ class LockButton(View):
     unlock_button_style = discord.ButtonStyle.secondary
     ghost_button_style = discord.ButtonStyle.secondary
     reveal_button_style = discord.ButtonStyle.secondary
-    claim_button_style = discord.ButtonStyle.secondary  
+    claim_button_style = discord.ButtonStyle.secondary
     view_button_style = discord.ButtonStyle.secondary
     plus_button_style = discord.ButtonStyle.secondary
     minus_button_style = discord.ButtonStyle.secondary
@@ -811,20 +874,6 @@ async def lock(ctx, *, whitelist_role_id=None):
 
 @client.command()
 @is_whitelisted()
-@commands.has_permissions(manage_guild=True)
-async def kicklogs(ctx, channel: discord.TextChannel):
-    global kick_logs_channel
-    kick_logs_channel = channel
-    await ctx.send(f"Kick logs will now be sent to {channel.mention}")
-
-@kicklogs.error
-async def kicklogs_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        embed = discord.Embed(title="Permission Error", description="You don't have permission to use this command.", color=discord.Color.red())
-        await ctx.send(embed=embed)
-
-@client.command()
-@is_whitelisted()
 @commands.has_permissions(kick_members=True)
 async def kick(ctx, member: discord.Member, *, reason=None):
     if not ctx.guild.me.guild_permissions.kick_members:
@@ -920,7 +969,7 @@ async def ticket(ctx):
         discord.SelectOption(label="📩 General Support", value="option_1"),
         discord.SelectOption(label="🔨 Ban Appeal", value="option_2"),
         discord.SelectOption(label="💵 Donation Ticket", value="option_3"),
-        discord.SelectOption(label="👺 Staff Report", value="option_4"),
+        discord.SelectOption(label="👻 Staff Report", value="option_4"),
         discord.SelectOption(label="📝 Staff Application", value="option_5")  # New option
     ]
     select = discord.ui.Select(placeholder="Make a selection", options=options, custom_id="ticket_dropdown")
@@ -958,7 +1007,7 @@ async def on_dropdown(interaction: discord.Interaction):
         category_id_option_2 = 1388055346907451463
         category_id_option_3 = 1388055346907451463
         category_id_option_4 = 1388055346907451463
-        category_id_option_5 = 1388055346907451463 # TODO: Set the actual category ID for Staff Applications
+        category_id_option_5 = 1388055346907451463
 
         if selected_option == "option_1":
             category_id = category_id_option_1
@@ -1009,7 +1058,7 @@ async def on_dropdown(interaction: discord.Interaction):
         close_button = CloseButton()
         transcript_button = TranscriptButton() 
         
-        view = discord.ui.View()
+        view = discord.ui.View(timeout=None)
         view.add_item(claim_button)
         view.add_item(close_button)
         view.add_item(transcript_button)
@@ -1017,7 +1066,9 @@ async def on_dropdown(interaction: discord.Interaction):
         embed = discord.Embed(title=f"Ticket Channel - #{ticket_number}", description="Click the button below to claim this ticket.")
         embed.set_footer(text="Ticket system")
         
+        # Send the embed and ping the user who created the ticket
         await ticket_channel.send(embed=embed, view=view)
+        await ticket_channel.send(f"{member.mention}")
 
         await asyncio.sleep(2)
         view.clear_items()
@@ -1025,7 +1076,7 @@ async def on_dropdown(interaction: discord.Interaction):
             discord.SelectOption(label="📩 General Support", value="option_1"),
             discord.SelectOption(label="🔨 Ban Appeal", value="option_2"),
             discord.SelectOption(label="💵 Donation Ticket", value="option_3"),
-            discord.SelectOption(label="👺 Staff Report", value="option_4"),
+            discord.SelectOption(label="👻 Staff Report", value="option_4"),
             discord.SelectOption(label="📝 Staff Application", value="option_5")  # New option
         ]
         select = discord.ui.Select(placeholder="Make a selection", options=options, custom_id="ticket_dropdown")
@@ -1090,8 +1141,8 @@ class ClaimButton(discord.ui.Button):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        if self.staff_role in interaction.user.roles:
-            # Allow staff to claim the ticket
+        if self.staff_role in interaction.user.roles or interaction.user.guild_permissions.administrator:
+            # Allow staff or admins to claim the ticket
             self.claimed_by = interaction.user
             overwrites = {
                 self.member: discord.PermissionOverwrite(send_messages=True, view_channel=True),
@@ -1287,11 +1338,11 @@ class TranscriptButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         try:
-            # Check if the user has the specific role
-            role_id = 1389773702928797707  # Replace with the specific role ID
+            # Check if the user has the specific role or admin perms
+            role_id = 1388439273463611392  # Replace with the specific role ID
             user = interaction.user
             member = interaction.guild.get_member(user.id)
-            if role_id not in [role.id for role in member.roles]:
+            if role_id not in [role.id for role in member.roles] and not member.guild_permissions.administrator:
                 await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
                 return
             
@@ -1368,11 +1419,11 @@ class TranscriptButton(discord.ui.Button):
 async def close(ctx):
     # Define a dictionary mapping category IDs to category names
     ticket_categories = {
-        1389773702928797707: "General Support",
-        1389773702928797707: "Ban Appeal",
-        1389773702928797707: "Donation Ticket",
-        1389773702928797707: "Staff Report",
-        1389773702928797707: "Staff Application"
+        1388055346907451463: "General Support",
+        1388055346907451463: "Ban Appeal",
+        1388055346907451463: "Donation Ticket",
+        1388055346907451463: "Staff Report",
+        1388055346907451463: "Staff Application"
 
         # Add more categories as needed
     }
@@ -1387,7 +1438,7 @@ async def close(ctx):
     # Check if the user invoking the command has the necessary permissions
     staff_role_id = 1389773702928797707  # Replace with your staff role ID
     staff_role = ctx.guild.get_role(staff_role_id)
-    if staff_role is None or staff_role not in ctx.author.roles:
+    if not (ctx.author.guild_permissions.administrator or (staff_role and staff_role in ctx.author.roles)):
         await ctx.send("You don't have permission to use this command.")
         return
 
@@ -1413,7 +1464,7 @@ async def transcript(ctx):
     # Check if the user invoking the command has the necessary permissions
     staff_role_id = 1389773702928797707  # Replace with your staff role ID
     staff_role = ctx.guild.get_role(staff_role_id)
-    if staff_role is None or staff_role not in ctx.author.roles:
+    if not (ctx.author.guild_permissions.administrator or (staff_role and staff_role in ctx.author.roles)):
         await ctx.send("You don't have permission to use this command.")
         return
 
@@ -1488,10 +1539,10 @@ async def transcript(ctx):
 
 @client.command()
 async def add(ctx, target):
-    # Check if the user invoking the command has the staff role
+    # Check if the user invoking the command has the staff role or admin perms
     staff_role_id = 1389773702928797707  # Replace with your staff role ID
     staff_role = ctx.guild.get_role(staff_role_id)
-    if staff_role is None or staff_role not in ctx.author.roles:
+    if not (ctx.author.guild_permissions.administrator or (staff_role and staff_role in ctx.author.roles)):
         embed = discord.Embed(
             title="Permission Denied",
             description="You don't have permission to use this command.",
@@ -1550,10 +1601,10 @@ async def add(ctx, target):
 
 @client.command()
 async def remove(ctx, target):
-    # Check if the user invoking the command has the staff role
+    # Check if the user invoking the command has the staff role or admin perms
     staff_role_id = 1389773702928797707  # Replace with your staff role ID
     staff_role = ctx.guild.get_role(staff_role_id)
-    if staff_role is None or staff_role not in ctx.author.roles:
+    if not (ctx.author.guild_permissions.administrator or (staff_role and staff_role in ctx.author.roles)):
         embed = discord.Embed(
             title="Permission Denied",
             description="You don't have permission to use this command.",
@@ -1613,10 +1664,10 @@ async def remove(ctx, target):
 
 @client.command()
 async def rename(ctx, *, new_name):
-    # Check if the user invoking the command has the staff role
+    # Check if the user invoking the command has the staff role or admin perms
     staff_role_id = 1389773702928797707  # Replace with your staff role ID
     staff_role = ctx.guild.get_role(staff_role_id)
-    if staff_role is None or staff_role not in ctx.author.roles:
+    if not (ctx.author.guild_permissions.administrator or (staff_role and staff_role in ctx.author.roles)):
         embed = discord.Embed(description="You don't have permission to use this command.", color=0x2a2d30)  # Set color to 0x2a2d30
         await ctx.send(embed=embed)
         return
@@ -3806,59 +3857,6 @@ cooldowns = {}
 cooldown_duration_minutes = 999999999
 
 
-@client.command()
-@is_whitelisted()
-async def createvc(ctx, *, vc_name=None):
-    if vc_name is None:
-        embed = discord.Embed(title="Error", description="Please specify the name of the voice channel.", color=discord.Color.red())
-        await ctx.send(embed=embed)
-        return
-
-    existing_vc = discord.utils.get(ctx.guild.voice_channels, name=vc_name)
-    if existing_vc:
-        embed = discord.Embed(title="Error", description=f"A voice channel with the name `{vc_name}` already exists.", color=discord.Color.red())
-        await ctx.send(embed=embed)
-        return
-
-    if ctx.author.id in cooldowns.get(ctx.guild.id, {}):
-        cooldown_time = cooldowns[ctx.guild.id][ctx.author.id]
-        if datetime.now() < cooldown_time:
-            remaining_time = (cooldown_time - datetime.now()).total_seconds() // 60 
-            embed = discord.Embed(title="Error", description=f"You already made your channel.", color=discord.Color.red())
-            await ctx.send(embed=embed)
-            return
-
-    category_id = vc_info.get(ctx.guild.id, {}).get('category_id')
-    role_id = vc_info.get(ctx.guild.id, {}).get('role_id')
-    
-    if category_id is None or role_id is None:
-        embed = discord.Embed(title="Error", description="Please set up VC permissions using `setvc` command first.", color=discord.Color.red())
-        await ctx.send(embed=embed)
-        return
-    
-    category = discord.utils.get(ctx.guild.categories, id=category_id)
-    if category is None:
-        embed = discord.Embed(title="Error", description="Invalid category ID.", color=discord.Color.red())
-        await ctx.send(embed=embed)
-        return
-
-    role = discord.utils.get(ctx.guild.roles, id=role_id)
-    if role is None:
-        embed = discord.Embed(title="Error", description="Invalid role ID.", color=discord.Color.red())
-        await ctx.send(embed=embed)
-        return
-
-    if role not in ctx.author.roles:
-        embed = discord.Embed(title="Error", description="You don't have the required role to create voice channels.", color=discord.Color.red())
-        await ctx.send(embed=embed)
-        return
-
-    vc = await category.create_voice_channel(name=vc_name)
-    vc_info.setdefault(ctx.guild.id, {})[vc.id] = {'creator_id': ctx.author.id}
-    embed = discord.Embed(title="Voice Channel Created", description=f"Successfully created voice channel `{vc_name}`.", color=discord.Color.green())
-    await ctx.send(embed=embed)
-    
-    cooldowns.setdefault(ctx.guild.id, {})[ctx.author.id] = datetime.now() + timedelta(minutes=cooldown_duration_minutes)
 
 @client.command()
 @is_whitelisted()
@@ -4216,7 +4214,7 @@ async def ghostvc(ctx):
 @client.command()
 @is_whitelisted()
 @commands.has_permissions(administrator=True)
-async def setvc(ctx, category_id: int = None, role_id: int = None):
+async def setvcc(ctx, category_id: int = None, role_id: int = None):
     if category_id is None or role_id is None:
         embed = discord.Embed(title="Error", description="Usage: setvc <category_id> <role_id>", color=discord.Color.red())
         await ctx.send(embed=embed)
@@ -4525,6 +4523,108 @@ async def on_ready():
 # Event: When a message is sent
 @client.event
 async def on_message(message):
+    # --- TOS multi-message detection (anti-bypass) ---
+    # Store recent messages per user per channel
+    if message.guild and not message.author.bot:
+        # Use (guild_id, channel_id, user_id) as key for per-channel tracking
+        buffer_key = (message.guild.id, message.channel.id, message.author.id)
+        if buffer_key not in global_user_message_buffers:
+            global_user_message_buffers[buffer_key] = []
+        # Add the new message to the buffer (store message object and normalized content)
+        global_user_message_buffers[buffer_key].append((message, demojify_and_normalize(message.content)))
+        # Keep only the last MAX_TOS_BUFFER messages
+        if len(global_user_message_buffers[buffer_key]) > MAX_TOS_BUFFER:
+            global_user_message_buffers[buffer_key] = global_user_message_buffers[buffer_key][-MAX_TOS_BUFFER:]
+        # Concatenate the normalized contents in order
+        concat = ''.join([msg_norm for _, msg_norm in global_user_message_buffers[buffer_key]])
+        # Check for TOS words in the concatenated buffer
+        for word in TOS_WORDS:
+            if word in concat:
+                # Delete all messages in the buffer that contributed to the match
+                for msg_obj, _ in global_user_message_buffers[buffer_key]:
+                    try:
+                        await msg_obj.delete()
+                    except Exception:
+                        pass
+                # Clear the buffer for this user in this channel
+                global_user_message_buffers[buffer_key] = []
+                # Send TOS log embed if configured
+                toslogs_channel_id = guild_settings.get(str(message.guild.id), {}).get('toslogs_channel_id')
+                if toslogs_channel_id:
+                    log_channel = message.guild.get_channel(toslogs_channel_id)
+                    if log_channel:
+                        embed = discord.Embed(
+                            title="TOS Violation Deleted",
+                            description=f"**Content:** {concat}\n**User:** {message.author.mention}",
+                            color=0x2a2d30
+                        )
+                        embed.set_footer(text=f"User ID: {message.author.id}")
+                        await log_channel.send(embed=embed)
+                return  # Don't process further
+
+    # --- Skip TOS moderation for commands ---
+    if message.guild and not message.author.bot:
+        # TOS user whitelist bypass
+        if 'tos_whitelist' in globals() and message.author.id in tos_whitelist:
+            await client.process_commands(message)
+            return
+        prefix_used = get_custom_prefix(client, message)
+        if message.content.startswith(prefix_used):
+            await client.process_commands(message)
+            return
+    # --- TOS moderation check (first thing) ---
+    if message.guild and not message.author.bot:
+        guild_id = str(message.guild.id)
+        tos_enabled = guild_settings.get(guild_id, {}).get('tos_enabled', False)
+        if tos_enabled:
+            norm = demojify_and_normalize(message.content)
+            lowered = message.content.lower()
+            for word in TOS_WORDS:
+                if word in norm or word in lowered:
+                    try:
+                        await message.delete()
+                    except Exception:
+                        pass
+                    # Send TOS log embed if configured
+                    toslogs_channel_id = guild_settings.get(str(message.guild.id), {}).get('toslogs_channel_id')
+                    if toslogs_channel_id:
+                        log_channel = message.guild.get_channel(toslogs_channel_id)
+                        if log_channel:
+                            embed = discord.Embed(
+                                title="TOS Violation Deleted",
+                                description=f"**Content:** {message.content}\n**User:** {message.author.mention}",
+                                color=0x2a2d30
+                            )
+                            embed.set_footer(text=f"User ID: {message.author.id}")
+                            await log_channel.send(embed=embed)
+                    return  # Don't process further
+                elif len(word) > 4:
+                    # Fuzzy substring match with variable window size for longer words only
+                    for win_len in range(len(word)-1, len(word)+3):
+                        if win_len < 2 or win_len > len(norm):
+                            continue
+                        for i in range(len(norm) - win_len + 1):
+                            window = norm[i:i+win_len]
+                            max_dist = 1 if len(word) <= 5 else 2
+                            if levenshtein(window, word) <= max_dist:
+                                try:
+                                    await message.delete()
+                                except Exception:
+                                    pass
+                                # Send TOS log embed if configured
+                                toslogs_channel_id = guild_settings.get(str(message.guild.id), {}).get('toslogs_channel_id')
+                                if toslogs_channel_id:
+                                    log_channel = message.guild.get_channel(toslogs_channel_id)
+                                    if log_channel:
+                                        embed = discord.Embed(
+                                            title="TOS Violation Deleted",
+                                            description=f"**Content:** {message.content}\n**User:** {message.author.mention}",
+                                            color=0x2a2d30
+                                        )
+                                        embed.set_footer(text=f"User ID: {message.author.id}")
+                                        await log_channel.send(embed=embed)
+                                return  # Don't process further
+
     # Substitute guild-specific aliases before any other processing
     if message.guild:
         guild_alias_map = guild_aliases.get(str(message.guild.id), {})
@@ -4620,7 +4720,86 @@ async def process_leveling(message):
             save_guild_settings()
 
     await client.process_commands(message)
+
 @client.command()
+@is_whitelisted()
+@commands.has_permissions(administrator=True)
+async def toslogs(ctx, channel_id: int):
+    guild_id = str(ctx.guild.id)
+    if guild_id not in guild_settings:
+        guild_settings[guild_id] = {}
+    guild_settings[guild_id]['toslogs_channel_id'] = int(channel_id)
+    save_guild_settings()
+    channel = ctx.guild.get_channel(int(channel_id))
+    if channel:
+        await ctx.send(f"TOS logs will now be sent to {channel.mention}.")
+    else:
+        await ctx.send(f"TOS logs channel set to ID {channel_id} (channel not found in this guild, please check the ID).")
+
+async def createvc(ctx, *, vc_name=None):
+    if vc_name is None:
+        embed = discord.Embed(title="Error", description="Please specify the name of the voice channel.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+
+    # Check if user already has a VC they created
+    user_vc = None
+    for channel in ctx.guild.voice_channels:
+        creator_id = vc_info.get(ctx.guild.id, {}).get(channel.id, {}).get('creator_id')
+        if creator_id == ctx.author.id:
+            user_vc = channel
+            break
+    if user_vc:
+        embed = discord.Embed(title="Error", description="You already have a voice channel. Please delete it before creating a new one.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+
+    existing_vc = discord.utils.get(ctx.guild.voice_channels, name=vc_name)
+    if existing_vc:
+        embed = discord.Embed(title="Error", description=f"A voice channel with the name `{vc_name}` already exists.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+
+    if ctx.author.id in cooldowns.get(ctx.guild.id, {}):
+        cooldown_time = cooldowns[ctx.guild.id][ctx.author.id]
+        if datetime.now() < cooldown_time:
+            remaining_time = (cooldown_time - datetime.now()).total_seconds() // 60 
+            embed = discord.Embed(title="Error", description=f"You already made your channel.", color=discord.Color.red())
+            await ctx.send(embed=embed)
+            return
+
+    category_id = vc_info.get(ctx.guild.id, {}).get('category_id')
+    role_id = vc_info.get(ctx.guild.id, {}).get('role_id')
+    
+    if category_id is None or role_id is None:
+        embed = discord.Embed(title="Error", description="Please set up VC permissions using `setvc` command first.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    
+    category = discord.utils.get(ctx.guild.categories, id=category_id)
+    if category is None:
+        embed = discord.Embed(title="Error", description="Invalid category ID.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+
+    role = discord.utils.get(ctx.guild.roles, id=role_id)
+    if role is None:
+        embed = discord.Embed(title="Error", description="Invalid role ID.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+
+    if role not in ctx.author.roles:
+        embed = discord.Embed(title="Error", description="You don't have the required role to create voice channels.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+
+    vc = await category.create_voice_channel(name=vc_name)
+    vc_info.setdefault(ctx.guild.id, {})[vc.id] = {'creator_id': ctx.author.id}
+    embed = discord.Embed(title="Voice Channel Created", description=f"Successfully created voice channel `{vc_name}`.", color=discord.Color.green())
+    await ctx.send(embed=embed)
+    
+    cooldowns.setdefault(ctx.guild.id, {})[ctx.author.id] = datetime.now() + timedelta(minutes=cooldown_duration_minutes)
+
 @is_whitelisted()
 async def level(ctx, option: str=None, channel_id: int=None):
     guild_id = str(ctx.guild.id)
@@ -4671,7 +4850,78 @@ async def level(ctx, option: str=None, channel_id: int=None):
 
     save_guild_settings()
 
+@client.command()
+@is_whitelisted()
+@commands.has_permissions(administrator=True)
+async def tos(ctx, option: str = None):
+    """Enable or disable TOS moderation: .tos on / .tos off"""
+    guild_id = str(ctx.guild.id)
+    if guild_id not in guild_settings:
+        guild_settings[guild_id] = {}
+    if option is None:
+        status = guild_settings[guild_id].get('tos_enabled', False)
+        await ctx.send(f"TOS moderation is currently {'ON' if status else 'OFF'}.")
+        return
+    if option.lower() == 'on':
+        guild_settings[guild_id]['tos_enabled'] = True
+        await ctx.send('✅ TOS moderation is now **ON**. Violating messages will be deleted.')
+    elif option.lower() == 'off':
+        guild_settings[guild_id]['tos_enabled'] = False
+        await ctx.send('❌ TOS moderation is now **OFF**.')
+    else:
+        await ctx.send('Usage: `.tos on` or `.tos off`')
+    save_guild_settings()
 
+tos_whitelist = set()
+
+@client.command()
+@commands.has_permissions(administrator=True)
+async def toswl(ctx, *user_ids: int):
+    """Whitelist or unwhitelist user IDs from TOS moderation. No arguments shows all whitelisted users."""
+    embed_color = 0x2a2d30
+
+    if not user_ids:
+        embed = Embed(title="Whitelisted TOS Users", color=embed_color)
+        if tos_whitelist:
+            user_lines = []
+            for uid in tos_whitelist:
+                try:
+                    user = await client.fetch_user(uid)
+                    user_lines.append(f"* `{uid}` {user.name}")
+                except Exception:
+                    user_lines.append(f"* `{uid}` Unknown User")
+            embed.description = "\n".join(user_lines)
+        else:
+            embed.description = "No user IDs are currently whitelisted for TOS."
+        return await ctx.send(embed=embed)
+
+    added = []
+    removed = []
+
+    for uid in user_ids:
+        uid = int(uid)
+        try:
+            user = await client.fetch_user(uid)
+            username = user.name
+        except Exception:
+            username = "Unknown User"
+
+        if uid in tos_whitelist:
+            tos_whitelist.remove(uid)
+            removed.append(f"`{uid}` {username}")
+        else:
+            tos_whitelist.add(uid)
+            added.append(f"`{uid}` {username}")
+
+    embed = Embed(color=embed_color)
+    if added:
+        embed.add_field(name="Whitelisted", value="\n".join(added), inline=False)
+    if removed:
+        embed.add_field(name="Unwhitelisted", value="\n".join(removed), inline=False)
+    if not added and not removed:
+        embed.description = "No changes made."
+
+    await ctx.send(embed=embed)
 
 @client.command()
 @is_whitelisted()
@@ -6095,110 +6345,6 @@ async def insta(ctx, insta_username):
         )
         await ctx.send(embed=embed)
 
-@client.command()
-async def reel(ctx):
-    try:
-        # Set up session with required headers
-        session = requests.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Origin': 'https://www.instagram.com',
-            'Referer': 'https://www.instagram.com/',
-            'X-IG-App-ID': '936619743392459'
-        })
-
-        # Set cookies (using the same session cookie from the stories function)
-        session.cookies.set('sessionid', '75456884376%3Au6JdIzKeU8qCww%3A10%3AAYe-3jygooBioU1sfC89_bZ2epgVaHwcE3Fpofv1TA', domain='.instagram.com')
-        
-        # Get reels from explore page
-        explore_url = 'https://www.instagram.com/api/v1/discover/web/explore_grid/'
-        response = session.get(explore_url)
-        
-        if response.status_code != 200:
-            raise Exception("Failed to fetch reels from Instagram")
-
-        data = response.json()
-        if 'items' not in data:
-            raise Exception("No reels found")
-
-        # Filter for video posts only
-        reels = [item for item in data['items'] if item.get('media_type') == 2]  # type 2 is video
-        if not reels:
-            raise Exception("No video reels found")
-
-        # Select a random reel
-        reel = random.choice(reels)
-        
-        # Get the reel URL
-        shortcode = reel['code']
-        reel_url = f"https://www.instagram.com/reel/{shortcode}/"
-        
-        # Get the video URL and other info
-        video_url = reel['video_versions'][0]['url']
-        username = reel['user']['username']
-        likes = reel.get('like_count', 0)
-        comments = reel.get('comment_count', 0)
-        caption = reel.get('caption', {}).get('text', '')
-
-        # Create a temporary directory for the reel
-        reel_dir = f"instagram_stories/temp_reel_{ctx.message.id}"
-        os.makedirs(reel_dir, exist_ok=True)
-        
-        try:
-            # Download the video
-            video_response = session.get(video_url, stream=True)
-            if video_response.status_code != 200:
-                raise Exception("Failed to download video")
-
-            video_file = os.path.join(reel_dir, f"reel_{shortcode}.mp4")
-            with open(video_file, 'wb') as f:
-                for chunk in video_response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-
-            # Check file size
-            file_size = os.path.getsize(video_file)
-            if file_size > 8 * 1024 * 1024:  # 8MB limit
-                embed = discord.Embed(
-                    description=f"The reel is too large to send (>8MB). You can watch it here: {reel_url}",
-                    color=discord.Color.red()
-                )
-                await ctx.send(embed=embed)
-            else:
-                # Create embed with reel info
-                embed = discord.Embed(
-                    title=f"Random Reel from @{username}",
-                    url=reel_url,
-                    color=0x2a2d30
-                )
-                embed.add_field(name="Likes", value=likes, inline=True)
-                embed.add_field(name="Comments", value=comments, inline=True)
-                if caption:
-                    # Truncate caption if it's too long
-                    caption = caption[:1000] + "..." if len(caption) > 1000 else caption
-                    embed.add_field(name="Caption", value=caption, inline=False)
-                
-                # Send the embed and video file
-                await ctx.send(embed=embed)
-                await ctx.send(file=discord.File(video_file))
-                
-        finally:
-            # Clean up the temporary directory
-            try:
-                if os.path.exists(reel_dir):
-                    shutil.rmtree(reel_dir)
-            except Exception as e:
-                print(f"Error cleaning up temporary directory: {e}")
-
-    except Exception as e:
-        print(f"Error: {e}")
-        embed = discord.Embed(
-            description="An error occurred while fetching the reel. Try again later.",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
 
 import datetime as dt
 @client.command(aliases=['rblx'])
