@@ -23,7 +23,7 @@ import unicodedata
 
 # List of TOS-violating words/phrases (add more as needed)
 TOS_WORDS = [
-    'nigger', 'nger', 'faggot', 'rape', 'fag',
+    'nigger', 'nger', 'faggot', 'rape', 'fag', 'nigr',
 ]
 
 # --- Global buffer for TOS multi-message detection ---
@@ -45,6 +45,18 @@ EMOJI_LETTER_MAP = {
     # Add more as needed
 }
 
+# Map for leetspeak numbers to letters
+LEET_MAP = {
+    '1': 'i',
+    '3': 'e',
+    '4': 'a',
+    '5': 's',
+    '6': 'g',
+    '7': 't',
+    '0': 'o',
+    '8': 'b',
+}
+
 def demojify_and_normalize(text):
     # Replace mapped emojis with their letter equivalents
     for emoji, letter in EMOJI_LETTER_MAP.items():
@@ -55,6 +67,9 @@ def demojify_and_normalize(text):
     return normalize(text)
 
 def normalize(text):
+    # Replace leetspeak numbers with their letter equivalents
+    for leet, letter in LEET_MAP.items():
+        text = text.replace(leet, letter)
     # Remove non-letters
     text = re.sub(r'[^a-zA-Z]', '', text)
     # Collapse all repeated letters to a single letter (e.g. niiiiggggger -> niger)
@@ -1780,6 +1795,55 @@ async def on_member_update(before, after):
     guild_id = after.guild.id
     logs_channel_id = member_update_logs.get(str(guild_id))
 
+    # Timeout/Untimeout logging
+    timeout_log_channel_id = timeout_log_channels.get(guild_id)
+    if before.timed_out_until != after.timed_out_until:
+        import datetime
+        import asyncio
+        channel = after.guild.get_channel(timeout_log_channel_id) if timeout_log_channel_id else None
+
+        # Try to get the moderator and reason from audit logs (with delay)
+        moderator = None
+        reason = None
+        await asyncio.sleep(1)  # Give Discord a moment to write the audit log
+        async for entry in after.guild.audit_logs(action=discord.AuditLogAction.member_update, limit=10):
+            if entry.target.id == after.id:
+                before_timeout = getattr(entry.changes.before, "communication_disabled_until", None)
+                after_timeout = getattr(entry.changes.after, "communication_disabled_until", None)
+                if before_timeout != after_timeout:
+                    moderator = entry.user
+                    reason = entry.reason
+                    break
+        moderator_value = moderator.mention if moderator else "Unknown"
+        reason_value = reason if reason else "Unknown"
+
+        # Timeout applied
+        if after.timed_out_until and (before.timed_out_until is None or (before.timed_out_until and after.timed_out_until > before.timed_out_until)):
+            duration = after.timed_out_until - datetime.datetime.now(datetime.timezone.utc)
+            total_seconds = int(duration.total_seconds())
+            if total_seconds < 60:
+                duration_str = f"{total_seconds} seconds"
+            elif total_seconds < 3600:
+                duration_str = f"{total_seconds // 60} minutes"
+            elif total_seconds < 86400:
+                duration_str = f"{total_seconds // 3600} hours"
+            else:
+                duration_str = f"{total_seconds // 86400} days"
+            embed = discord.Embed(title="Timed Out", color=0x2a2d30)
+            embed.add_field(name="User", value=after.mention, inline=True)
+            embed.add_field(name="Moderator", value=moderator_value, inline=True)
+            embed.add_field(name="Duration/Reason", value=f"{duration_str} - {reason_value}", inline=True)
+            if channel:
+                await channel.send(embed=embed)
+        # Timeout removed
+        elif before.timed_out_until and (after.timed_out_until is None or after.timed_out_until < before.timed_out_until):
+            embed = discord.Embed(title="Untimed Out", color=0x2a2d30)
+            embed.add_field(name="User", value=after.mention, inline=True)
+            embed.add_field(name="Moderator", value=moderator_value, inline=True)
+            embed.add_field(name="Reason", value=reason_value, inline=True)
+            if channel:
+                await channel.send(embed=embed)
+
     if logs_channel_id:
         logs_channel = client.get_channel(logs_channel_id)
         if logs_channel:
@@ -1849,7 +1913,7 @@ async def on_member_update(before, after):
                             await channel.send(embed=embed)
                         else:
                             print(f'Channel ID {channel_id} not found in guild {guild_id}.')
-
+                    
 
 
 
@@ -2356,7 +2420,7 @@ async def on_guild_channel_delete(channel):
                     return
 
                 if user.id in last_channel_delete_times:
-                    time_difference = datetime.now() - last_channel_delete_times[user.id]
+                    time_difference = datetime.datetime.now(datetime.timezone.utc) - last_channel_delete_times[user.id]
                     if time_difference < timedelta(seconds=2):
                         if action == 'timeout':
                             await timeout_user(channel.guild, user, "Channel deletion")
@@ -2365,23 +2429,13 @@ async def on_guild_channel_delete(channel):
                         elif action == 'ban':
                             await ban_user(channel.guild, user, "Channel deletion")
 
-                last_channel_delete_times[user.id] = datetime.now()
+                last_channel_delete_times[user.id] = datetime.datetime.now(datetime.timezone.utc)
 
-                if action == 'timeout':
-                    embed = discord.Embed(title="Channel Deleted", color=0xff0000)
-                    embed.add_field(name="Channel", value=f"**{channel.name}** deleted", inline=False)
-                    embed.add_field(name="Deleted by", value=user.mention)
-                    embed.add_field(name="When", value=entry.created_at.strftime("%Y-%m-%d %H:%M:%S"))
-                elif action == 'kick':
-                    embed = discord.Embed(title="Member Kicked", color=0xff0000)
-                    embed.add_field(name="Kicked Member", value=user.mention)
-                    embed.add_field(name="Kicked by", value="Automated System")
-                    embed.add_field(name="Reason", value="Channel deletion")
-                elif action == 'ban':
-                    embed = discord.Embed(title="Member Banned", color=0xff0000)
-                    embed.add_field(name="Banned Member", value=user.mention)
-                    embed.add_field(name="Banned by", value="Automated System")
-                    embed.add_field(name="Reason", value="Channel deletion")
+                embed = discord.Embed(title="Channel Deleted", color=0xff0000)
+                embed.add_field(name="Channel", value=f"**{channel.name}** deleted", inline=False)
+                embed.add_field(name="Deleted by", value=user.mention)
+                embed.add_field(name="When", value=f"<t:{int(entry.created_at.timestamp())}:R>")
+                embed.add_field(name="Exact Time", value=f"<t:{int(entry.created_at.timestamp())}:f>")
 
                 avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
                 embed.set_author(name=user.name, icon_url=avatar_url)
@@ -2485,7 +2539,7 @@ async def on_guild_role_delete(role):
                     return
 
                 if user.id in last_role_delete_times:
-                    time_difference = datetime.now() - last_role_delete_times[user.id]
+                    time_difference = datetime.datetime.now(datetime.timezone.utc) - last_role_delete_times[user.id]
                     if time_difference < timedelta(seconds=2):
                         if action == 'timeout':
                             await timeout_user(role.guild, user, "Deleting roles")
@@ -2494,12 +2548,13 @@ async def on_guild_role_delete(role):
                         elif action == 'ban':
                             await ban_user(role.guild, user, "Deleting roles")
 
-                last_role_delete_times[user.id] = datetime.now()
+                last_role_delete_times[user.id] = datetime.datetime.now(datetime.timezone.utc)
 
                 embed = discord.Embed(title="Role Deleted", color=0xff0000)
                 embed.add_field(name="Deleted Role", value=role.name)
                 embed.add_field(name="Deleted by", value=user.mention)
-                embed.add_field(name="When", value=entry.created_at.strftime("%Y-%m-%d %H:%M:%S"))
+                embed.add_field(name="When", value=f"<t:{int(entry.created_at.timestamp())}:R>")
+                embed.add_field(name="Exact Time", value=f"<t:{int(entry.created_at.timestamp())}:f>")
 
                 avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
                 embed.set_author(name=user.name, icon_url=avatar_url)
@@ -2531,7 +2586,7 @@ async def on_guild_role_create(role):
                     return
 
                 if user.id in last_channel_create_times:
-                    time_difference = datetime.now() - last_channel_create_times[user.id]
+                    time_difference = datetime.datetime.now(datetime.timezone.utc) - last_channel_create_times[user.id]
                     if time_difference < timedelta(seconds=2):
                         if action == 'timeout':
                             await timeout_user(role.guild, user, "Role creation")
@@ -2540,12 +2595,13 @@ async def on_guild_role_create(role):
                         elif action == 'ban':
                             await ban_user(role.guild, user, "Role creation")
 
-                last_channel_create_times[user.id] = datetime.now()
+                last_channel_create_times[user.id] = datetime.datetime.now(datetime.timezone.utc)
 
                 embed = discord.Embed(title="Role Created", color=0x00FF00)
                 embed.add_field(name="Role", value=f"**{role.name}** created", inline=False)
                 embed.add_field(name="Created by", value=user.mention)
-                embed.add_field(name="When", value=entry.created_at.strftime("%Y-%m-%d %H:%M:%S"))
+                embed.add_field(name="When", value=f"<t:{int(entry.created_at.timestamp())}:R>")
+                embed.add_field(name="Exact Time", value=f"<t:{int(entry.created_at.timestamp())}:f>")
 
                 avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
                 embed.set_author(name=user.name, icon_url=avatar_url)
@@ -2577,7 +2633,7 @@ async def on_guild_channel_create(channel):
                     return
 
                 if user.id in last_channel_create_times:
-                    time_difference = datetime.now() - last_channel_create_times[user.id]
+                    time_difference = datetime.datetime.now(datetime.timezone.utc) - last_channel_create_times[user.id]
                     if time_difference < timedelta(seconds=2):
                         if action == 'timeout':
                             await timeout_user(channel.guild, user, "Channel creation")
@@ -2586,12 +2642,13 @@ async def on_guild_channel_create(channel):
                         elif action == 'ban':
                             await ban_user(channel.guild, user, "Channel creation")
 
-                last_channel_create_times[user.id] = datetime.now()
+                last_channel_create_times[user.id] = datetime.datetime.now(datetime.timezone.utc)
 
                 embed = discord.Embed(title="Channel Created", color=0x00FF00)
                 embed.add_field(name="Channel", value=f"**{channel.name}** created", inline=False)
                 embed.add_field(name="Created by", value=user.mention)
-                embed.add_field(name="When", value=entry.created_at.strftime("%Y-%m-%d %H:%M:%S"))
+                embed.add_field(name="When", value=f"<t:{int(entry.created_at.timestamp())}:R>")
+                embed.add_field(name="Exact Time", value=f"<t:{int(entry.created_at.timestamp())}:f>")
 
                 avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
                 embed.set_author(name=user.name, icon_url=avatar_url)
@@ -2623,7 +2680,7 @@ async def on_guild_channel_delete(channel):
                     return
 
                 if user.id in last_channel_delete_times:
-                    time_difference = datetime.now() - last_channel_delete_times[user.id]
+                    time_difference = datetime.datetime.now(datetime.timezone.utc) - last_channel_delete_times[user.id]
                     if time_difference < timedelta(seconds=2):
                         if action == 'timeout':
                             await timeout_user(channel.guild, user, "Channel deletion")
@@ -2632,12 +2689,13 @@ async def on_guild_channel_delete(channel):
                         elif action == 'ban':
                             await ban_user(channel.guild, user, "Channel deletion")
 
-                last_channel_delete_times[user.id] = datetime.now()
+                last_channel_delete_times[user.id] = datetime.datetime.now(datetime.timezone.utc)
 
                 embed = discord.Embed(title="Channel Deleted", color=0xff0000)
                 embed.add_field(name="Channel", value=f"**{channel.name}** deleted", inline=False)
                 embed.add_field(name="Deleted by", value=user.mention)
-                embed.add_field(name="When", value=entry.created_at.strftime("%Y-%m-%d %H:%M:%S"))
+                embed.add_field(name="When", value=f"<t:{int(entry.created_at.timestamp())}:R>")
+                embed.add_field(name="Exact Time", value=f"<t:{int(entry.created_at.timestamp())}:f>")
 
                 avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
                 embed.set_author(name=user.name, icon_url=avatar_url)
@@ -4523,108 +4581,6 @@ async def on_ready():
 # Event: When a message is sent
 @client.event
 async def on_message(message):
-    # --- TOS multi-message detection (anti-bypass) ---
-    # Store recent messages per user per channel
-    if message.guild and not message.author.bot:
-        # Use (guild_id, channel_id, user_id) as key for per-channel tracking
-        buffer_key = (message.guild.id, message.channel.id, message.author.id)
-        if buffer_key not in global_user_message_buffers:
-            global_user_message_buffers[buffer_key] = []
-        # Add the new message to the buffer (store message object and normalized content)
-        global_user_message_buffers[buffer_key].append((message, demojify_and_normalize(message.content)))
-        # Keep only the last MAX_TOS_BUFFER messages
-        if len(global_user_message_buffers[buffer_key]) > MAX_TOS_BUFFER:
-            global_user_message_buffers[buffer_key] = global_user_message_buffers[buffer_key][-MAX_TOS_BUFFER:]
-        # Concatenate the normalized contents in order
-        concat = ''.join([msg_norm for _, msg_norm in global_user_message_buffers[buffer_key]])
-        # Check for TOS words in the concatenated buffer
-        for word in TOS_WORDS:
-            if word in concat:
-                # Delete all messages in the buffer that contributed to the match
-                for msg_obj, _ in global_user_message_buffers[buffer_key]:
-                    try:
-                        await msg_obj.delete()
-                    except Exception:
-                        pass
-                # Clear the buffer for this user in this channel
-                global_user_message_buffers[buffer_key] = []
-                # Send TOS log embed if configured
-                toslogs_channel_id = guild_settings.get(str(message.guild.id), {}).get('toslogs_channel_id')
-                if toslogs_channel_id:
-                    log_channel = message.guild.get_channel(toslogs_channel_id)
-                    if log_channel:
-                        embed = discord.Embed(
-                            title="TOS Violation Deleted",
-                            description=f"**Content:** {concat}\n**User:** {message.author.mention}",
-                            color=0x2a2d30
-                        )
-                        embed.set_footer(text=f"User ID: {message.author.id}")
-                        await log_channel.send(embed=embed)
-                return  # Don't process further
-
-    # --- Skip TOS moderation for commands ---
-    if message.guild and not message.author.bot:
-        # TOS user whitelist bypass
-        if 'tos_whitelist' in globals() and message.author.id in tos_whitelist:
-            await client.process_commands(message)
-            return
-        prefix_used = get_custom_prefix(client, message)
-        if message.content.startswith(prefix_used):
-            await client.process_commands(message)
-            return
-    # --- TOS moderation check (first thing) ---
-    if message.guild and not message.author.bot:
-        guild_id = str(message.guild.id)
-        tos_enabled = guild_settings.get(guild_id, {}).get('tos_enabled', False)
-        if tos_enabled:
-            norm = demojify_and_normalize(message.content)
-            lowered = message.content.lower()
-            for word in TOS_WORDS:
-                if word in norm or word in lowered:
-                    try:
-                        await message.delete()
-                    except Exception:
-                        pass
-                    # Send TOS log embed if configured
-                    toslogs_channel_id = guild_settings.get(str(message.guild.id), {}).get('toslogs_channel_id')
-                    if toslogs_channel_id:
-                        log_channel = message.guild.get_channel(toslogs_channel_id)
-                        if log_channel:
-                            embed = discord.Embed(
-                                title="TOS Violation Deleted",
-                                description=f"**Content:** {message.content}\n**User:** {message.author.mention}",
-                                color=0x2a2d30
-                            )
-                            embed.set_footer(text=f"User ID: {message.author.id}")
-                            await log_channel.send(embed=embed)
-                    return  # Don't process further
-                elif len(word) > 4:
-                    # Fuzzy substring match with variable window size for longer words only
-                    for win_len in range(len(word)-1, len(word)+3):
-                        if win_len < 2 or win_len > len(norm):
-                            continue
-                        for i in range(len(norm) - win_len + 1):
-                            window = norm[i:i+win_len]
-                            max_dist = 1 if len(word) <= 5 else 2
-                            if levenshtein(window, word) <= max_dist:
-                                try:
-                                    await message.delete()
-                                except Exception:
-                                    pass
-                                # Send TOS log embed if configured
-                                toslogs_channel_id = guild_settings.get(str(message.guild.id), {}).get('toslogs_channel_id')
-                                if toslogs_channel_id:
-                                    log_channel = message.guild.get_channel(toslogs_channel_id)
-                                    if log_channel:
-                                        embed = discord.Embed(
-                                            title="TOS Violation Deleted",
-                                            description=f"**Content:** {message.content}\n**User:** {message.author.mention}",
-                                            color=0x2a2d30
-                                        )
-                                        embed.set_footer(text=f"User ID: {message.author.id}")
-                                        await log_channel.send(embed=embed)
-                                return  # Don't process further
-
     # Substitute guild-specific aliases before any other processing
     if message.guild:
         guild_alias_map = guild_aliases.get(str(message.guild.id), {})
@@ -4636,8 +4592,96 @@ async def on_message(message):
                 alias_attempt = parts[0].lower()
                 if alias_attempt in guild_alias_map:
                     original_cmd = guild_alias_map[alias_attempt]
-                    # rebuild message content: prefix + original + rest_of_message_without_alias
-                    message.content = f"{prefix_used}{original_cmd}{after_prefix[len(alias_attempt):]}"
+                    rest = after_prefix[len(alias_attempt):].lstrip()
+                    message.content = f"{prefix_used}{original_cmd}"
+                    if rest:
+                        message.content += f" {rest}"
+                    print(f"[ALIAS DEBUG] Substituted alias '{alias_attempt}' with '{original_cmd}'. New message: '{message.content}'")
+
+    # --- TOS BYPASS for whitelisted users ---
+    if message.author.id in tos_whitelist:
+        pass  # Skip TOS checks for this user
+    else:
+        # --- TOS multi-message detection (anti-bypass) ---
+        guild_id = str(message.guild.id)
+        tos_enabled = guild_settings.get(guild_id, {}).get('tos_enabled', False)
+        if tos_enabled and message.guild and not message.author.bot:
+            buffer_key = (message.guild.id, message.channel.id, message.author.id)
+            if buffer_key not in global_user_message_buffers:
+                global_user_message_buffers[buffer_key] = []
+            global_user_message_buffers[buffer_key].append((message, demojify_and_normalize(message.content)))
+            if len(global_user_message_buffers[buffer_key]) > MAX_TOS_BUFFER:
+                global_user_message_buffers[buffer_key] = global_user_message_buffers[buffer_key][-MAX_TOS_BUFFER:]
+            concat = ''.join([msg_norm for _, msg_norm in global_user_message_buffers[buffer_key]])
+            for word in TOS_WORDS:
+                if word in concat:
+                    try:
+                        await message.delete()
+                    except Exception:
+                        pass
+                    global_user_message_buffers[buffer_key] = []
+                    toslogs_channel_id = guild_settings.get(str(message.guild.id), {}).get('toslogs_channel_id')
+                    if toslogs_channel_id:
+                        log_channel = message.guild.get_channel(toslogs_channel_id)
+                        if log_channel:
+                            embed = discord.Embed(
+                                title="TOS Violation Deleted",
+                                description=f"**Content:** {concat}\n**User:** {message.author.mention}",
+                                color=0x2a2d30
+                            )
+                            embed.set_footer(text=f"User ID: {message.author.id}")
+                            await log_channel.send(embed=embed)
+                    return  # Don't process further
+
+        # --- TOS moderation check (single message) ---
+        if message.guild and not message.author.bot:
+            guild_id = str(message.guild.id)
+            tos_enabled = guild_settings.get(guild_id, {}).get('tos_enabled', False)
+            if tos_enabled:
+                norm = demojify_and_normalize(message.content)
+                lowered = message.content.lower()
+                for word in TOS_WORDS:
+                    if word in norm or word in lowered:
+                        try:
+                            await message.delete()
+                        except Exception:
+                            pass
+                        toslogs_channel_id = guild_settings.get(str(message.guild.id), {}).get('toslogs_channel_id')
+                        if toslogs_channel_id:
+                            log_channel = message.guild.get_channel(toslogs_channel_id)
+                            if log_channel:
+                                embed = discord.Embed(
+                                    title="TOS Violation Deleted",
+                                    description=f"**Content:** {message.content}\n**User:** {message.author.mention}",
+                                    color=0x2a2d30
+                                )
+                                embed.set_footer(text=f"User ID: {message.author.id}")
+                                await log_channel.send(embed=embed)
+                        return  # Don't process further
+                    elif len(word) > 4:
+                        for win_len in range(len(word)-1, len(word)+3):
+                            if win_len < 2 or win_len > len(norm):
+                                continue
+                            for i in range(len(norm) - win_len + 1):
+                                window = norm[i:i+win_len]
+                                max_dist = 1 if len(word) <= 5 else 2
+                                if levenshtein(window, word) <= max_dist:
+                                    try:
+                                        await message.delete()
+                                    except Exception:
+                                        pass
+                                    toslogs_channel_id = guild_settings.get(str(message.guild.id), {}).get('toslogs_channel_id')
+                                    if toslogs_channel_id:
+                                        log_channel = message.guild.get_channel(toslogs_channel_id)
+                                        if log_channel:
+                                            embed = discord.Embed(
+                                                title="TOS Violation Deleted",
+                                                description=f"**Content:** {message.content}\n**User:** {message.author.mention}",
+                                                color=0x2a2d30
+                                            )
+                                            embed.set_footer(text=f"User ID: {message.author.id}")
+                                            await log_channel.send(embed=embed)
+                                    return  # Don't process further
 
     # Ignore messages from bots to prevent unnecessary processing
     if message.author.bot:
@@ -4669,6 +4713,13 @@ async def on_message(message):
                 return
 
     await process_leveling(message)  # Process leveling for others
+
+    # Try to process commands, and if not found, send a helpful error
+    try:
+        await client.process_commands(message)
+    except commands.CommandNotFound as e:
+        await message.channel.send(f"❌ Command not found: {message.content}")
+        print(f"[ALIAS DEBUG] Command not found after alias substitution: {message.content}")
 
 async def process_leveling(message):
     global guild_settings
@@ -4719,8 +4770,6 @@ async def process_leveling(message):
 
             save_guild_settings()
 
-    await client.process_commands(message)
-
 @client.command()
 @is_whitelisted()
 @commands.has_permissions(administrator=True)
@@ -4736,6 +4785,9 @@ async def toslogs(ctx, channel_id: int):
     else:
         await ctx.send(f"TOS logs channel set to ID {channel_id} (channel not found in this guild, please check the ID).")
 
+
+@client.command()
+@is_whitelisted()
 async def createvc(ctx, *, vc_name=None):
     if vc_name is None:
         embed = discord.Embed(title="Error", description="Please specify the name of the voice channel.", color=discord.Color.red())
@@ -4762,8 +4814,8 @@ async def createvc(ctx, *, vc_name=None):
 
     if ctx.author.id in cooldowns.get(ctx.guild.id, {}):
         cooldown_time = cooldowns[ctx.guild.id][ctx.author.id]
-        if datetime.now() < cooldown_time:
-            remaining_time = (cooldown_time - datetime.now()).total_seconds() // 60 
+        if datetime.datetime.now(datetime.timezone.utc) < cooldown_time:
+            remaining_time = (cooldown_time - datetime.datetime.now(datetime.timezone.utc)).total_seconds() // 60 
             embed = discord.Embed(title="Error", description=f"You already made your channel.", color=discord.Color.red())
             await ctx.send(embed=embed)
             return
@@ -4798,7 +4850,7 @@ async def createvc(ctx, *, vc_name=None):
     embed = discord.Embed(title="Voice Channel Created", description=f"Successfully created voice channel `{vc_name}`.", color=discord.Color.green())
     await ctx.send(embed=embed)
     
-    cooldowns.setdefault(ctx.guild.id, {})[ctx.author.id] = datetime.now() + timedelta(minutes=cooldown_duration_minutes)
+    cooldowns.setdefault(ctx.guild.id, {})[ctx.author.id] = datetime.datetime.now(datetime.timezone.utc) + timedelta(minutes=cooldown_duration_minutes)
 
 @is_whitelisted()
 async def level(ctx, option: str=None, channel_id: int=None):
@@ -6896,7 +6948,7 @@ async def on_member_join(member):
                 'guild_id': member.guild.id,
                 'invite_code': used_invite.code,
                 'inviter_id': used_invite.inviter.id if used_invite.inviter else None,
-                'join_time': datetime.now(timezone.utc).timestamp()
+                'join_time': datetime.datetime.now(timezone.utc).timestamp()
             }
             
             # Update our tracking for all current invites
@@ -7006,7 +7058,7 @@ async def invitelogger(ctx, channel: discord.TextChannel = None):
                     # Add expiration with proper datetime handling
                     if inv.expires_at:
                         # Convert to UTC and get timestamp
-                        current_time = datetime.now(timezone.utc)
+                        current_time = datetime.datetime.now(timezone.utc)
                         expire_time = inv.expires_at.replace(tzinfo=timezone.utc)
                         time_remaining = expire_time - current_time
                         
